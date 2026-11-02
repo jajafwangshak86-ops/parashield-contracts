@@ -259,7 +259,7 @@ impl OracleVerifier {
     /// `weight` is 1-100; higher-weight oracles contribute more to the median.
     pub fn add_oracle(env: Env, admin: Address, oracle: Address, data_type: Symbol, weight: u32) {
         Self::require_admin(&env, &admin);
-        Self::validate_stellar_address(&env, &oracle);
+        Self::validate_contract_address(&env, &oracle);
         // SECURITY FIX: Enforce maximum weight bounds to prevent oracle domination
         const MAX_WEIGHT: u32 = 100_000;
         if weight == 0 || weight > MAX_WEIGHT {
@@ -1277,6 +1277,11 @@ impl OracleVerifier {
     /// consume storage/instruction budget (griefing).
     pub fn set_min_submit_interval(env: Env, admin: Address, seconds: u64) {
         Self::require_admin(&env, &admin);
+        // Issue #624: reject zero -- a zero interval removes the per-oracle
+        // rate-limit guard and allows unlimited oracle submissions per block.
+        if seconds == 0 {
+            panic_with_error!(&env, Error::InvalidInput);
+        }
         env.storage()
             .instance()
             .set(&StorageKey::MinSubmitInterval, &seconds);
@@ -3123,6 +3128,21 @@ impl OracleVerifier {
         addr_str.copy_into_slice(&mut buf);
 
         if buf[0] != b'G' && buf[0] != b'C' {
+            panic_with_error!(env, Error::InvalidAddress);
+        }
+    }
+
+    fn validate_contract_address(env: &Env, address: &Address) {
+        let addr_str = address.to_string();
+
+        if addr_str.len() != 56 {
+            panic_with_error!(env, Error::InvalidAddress);
+        }
+
+        let mut buf = [0u8; 56];
+        addr_str.copy_into_slice(&mut buf);
+
+        if buf[0] != b'C' {
             panic_with_error!(env, Error::InvalidAddress);
         }
     }
